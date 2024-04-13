@@ -44,7 +44,7 @@ def get_knowledge_content(vectara, query, threshold=0.5):
     for number, (score, doc) in enumerate(found_docs):
         knowledge_content += f"Document {number}: {found_docs[number][0].page_content}\n"
     return knowledge_content
-
+    
 # # Sidebar for txt upload and API keys
 # with st.sidebar:
 #     st.header("Configuration")
