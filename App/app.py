@@ -14,6 +14,8 @@ from langchain.schema import StrOutputParser
 from langchain.vectorstores import Vectara
 from langchain_community.llms import HuggingFaceEndpoint
 from langchain_community.vectorstores.vectara import SummaryConfig
+from langchain.chains import ConversationalRetrievalChain
+from langchain.memory import ConversationBufferMemory
 
 VECTARA_CUSTOMER_ID = os.getenv("VECTARA_CUSTOMER_ID")
 VECTARA_CORPUS_ID = os.getenv("VECTARA_CORPUS_ID")
@@ -29,18 +31,6 @@ llm = HuggingFaceEndpoint(
     repo_id=repo_id, max_length=250, temperature=0.5, max_new_tokens=250, huggingfacehub_api_token=HUGGINGFACEHUB_API_TOKEN
 )
 
-# model_id = "google/gemma-2b-it"
-# tokenizer = AutoTokenizer.from_pretrained(model_id)
-# model = AutoModelForCausalLM.from_pretrained(model_id)
-# pipe = pipeline("text-generation", model=model, tokenizer=tokenizer, max_new_tokens=10)
-# llm = HuggingFacePipeline(pipeline=pipe)
-
-# def langchain_func(file):
-#     loader = TextLoader(file, encoding='UTF-8')
-#     documents = loader.load()
-#     global vectara
-#     vectara = Vectara.from_documents(documents, embedding=None)
-
 summary_config = SummaryConfig(True, prompt_name='vectara-experimental-summary-ext-2023-12-11-large', max_results=10)
 
 def initialize_vectara():
@@ -51,39 +41,43 @@ def initialize_vectara():
                 )
     return vectara
 
-def get_knowledge_content(vectara, query, summary_config, threshold=0.5):
+def get_knowledge_content(vectara, query, summary_config, threshold=0.7):
     found_docs = vectara.similarity_search_with_score(
         query,
         score_threshold=threshold,
         summary_config=summary_config,
+        n_sentence_context=3
     )
     print("KNOWLEDGE:")
-    print(found_docs)
-    knowledge_content = ""
-    for number, (score, doc) in enumerate(found_docs):
-        knowledge_content += f"Document {number}: {found_docs[number][0].page_content}\n"
-    return knowledge_content
-
-# # Sidebar for txt upload and API keys
-# with st.sidebar:
-#     st.header("Configuration")
-#     uploaded_file = st.file_uploader("Choose a TXT file", type=["txt"])
-#     submit_button = st.button("Submit")
+    print(found_docs[-1][0].page_content)
+    return found_docs[-1][0].page_content
+    # knowledge_content = ""
+    # for number, (score, doc) in enumerate(found_docs):
+    #     knowledge_content += f"Document {number}: {found_docs[number][0].page_content}\n"
+    # return knowledge_content
 
 vectara_client = initialize_vectara()
 
 prompt = PromptTemplate.from_template(
-    """<s>[INST] You are a professional and friendly Bank Customer Service. Your task is to help a customer with a valid answer based on Commonwealth Bank knowledge. 
+    """
+    <s>[INST] You are a professional and friendly Bank Customer Service. Your task is provide conversational services to answer the customer question based on Commonwealth Bank knowledge, apart from that, answer wisely without hallucinations. When the customer asks about the flow, explain it step by step. Greet the customer when they greet you. When the customer requests an explanation, provide a concise response.
     Commonwealth Bank knowledge: {knowledge}. 
-    The question is as follows: Hello, can you help me?[/INST]
-    Hello, how can I help you?</s>
+    The question is as follows: Hello[/INST]
+    Welcome to CommonWealth Bank! How can I assist you today?</s>
     [INST]
     {question}
     [/INST]
     """
 )
 
-runnable = prompt | llm | StrOutputParser()
+memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+
+# retriever = vectara_client.as_retriever(search_type="similarity_score_threshold", search_kwargs={'score_threshold': 0.6})
+
+runnable = ConversationalRetrievalChain.from_llm(
+    llm, vectara_client, memory=memory, verbose=False, combine_docs_chain_kwargs={"prompt": prompt}
+)
+# runnable = prompt | llm | StrOutputParser()
 
 # Main Streamlit App
 st.title("Bank Customer Service Chat")
