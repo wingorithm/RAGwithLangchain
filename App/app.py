@@ -6,93 +6,131 @@ from dotenv import load_dotenv
 dotenv_path = join(dirname(dirname(__file__)), '.env')
 load_dotenv(dotenv_path)
 
-
 import streamlit as st
-from dotenv import load_dotenv
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.chat_models import ChatOpenAI
-from langchain.prompts import PromptTemplate
+
+from langchain_core.prompts import PromptTemplate
+from langchain.chains import LLMChain
 from langchain.schema import StrOutputParser
-from langchain.vectorstores import Vectara
-from openai import OpenAI
+from vectaraIntegration import query, get_knowledge, initialize_vectara, upload_all_file
+from langchain_community.llms import HuggingFaceEndpoint
 
-VECTARA_CUSTOMER_ID = os.getenv("VECTARA_CUSTOMER_ID")
-VECTARA_CORPUS_ID = os.getenv("VECTARA_CORPUS_ID")
-VECTARA_API_KEY = os.getenv("VECTARA_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+HF_TOKEN = os.getenv("HF_TOKEN")
+REPO_ID = "mistralai/Mistral-7B-Instruct-v0.2"
 
-# def langchain_func(file):
-#     loader = TextLoader(file, encoding='UTF-8')
-#     documents = loader.load()
-#     global vectara
-#     vectara = Vectara.from_documents(documents, embedding=None)
 
-def initialize_vectara():
-    vectara = Vectara(
-                    vectara_customer_id=VECTARA_CUSTOMER_ID,
-                    vectara_corpus_id=VECTARA_CORPUS_ID,
-                    vectara_api_key=VECTARA_API_KEY
-                )
-    return vectara
-
-def get_knowledge_content(vectara, query, threshold=0.5):
-    found_docs = vectara.similarity_search_with_score(
-        query,
-        score_threshold=threshold,
-    )
-    knowledge_content = ""
-    for number, (score, doc) in enumerate(found_docs):
-        knowledge_content += f"Document {number}: {found_docs[number][0].page_content}\n"
-    return knowledge_content
-
-# # Sidebar for txt upload and API keys
-# with st.sidebar:
-#     st.header("Configuration")
-#     uploaded_file = st.file_uploader("Choose a TXT file", type=["txt"])
-#     submit_button = st.button("Submit")
-
-vectara_client = initialize_vectara()
-
-prompt = PromptTemplate.from_template(
-    """You are a professional and friendly Bank Customer Service and you are helping a client with bank knowledge. Just explain him in detail the answer and nothing else. This is the issue: {issue} 
-    To assist him with his issue, you need to know the following information: {knowledge} 
-    """
+llm_base = HuggingFaceEndpoint(
+    repo_id=REPO_ID,
+    max_new_tokens=512,
+    top_k=10,
+    top_p=0.95,
+    typical_p=0.95,
+    temperature=0.01,
+    repetition_penalty=1.03,
+    huggingfacehub_api_token=HF_TOKEN
 )
 
-runnable = prompt | ChatOpenAI(streaming=True, callbacks=[StreamingStdOutCallbackHandler()], openai_api_key=OPENAI_API_KEY) | StrOutputParser()
+vectara_client = initialize_vectara()
+# upload_all_file("../Bank Product Data/", vectara_client)
 
-# Main Streamlit App
+# preprocess_prompt = PromptTemplate.from_template(
+#   """You are a professional and friendly CommonWealth Bank Customer Service. You must classify these user query as "commonwealth bank related question" or no!
+#     ANSWER MUST ONLY 1 word length EITHER "Yes" OR "No"!
+    
+#     user query : {issue}
+#     Classification:
+#     """
+# )
+
+# prompt = PromptTemplate.from_template(
+#   """You are a professional and friendly CommonWealth Bank Customer Service and you are helping a client with provided bank knowledge. 
+        
+#     user query: {issue} 
+#     """
+# )
+prompt = PromptTemplate.from_template(
+  """You are a professional and friendly "CommonWealth" Bank Customer Service and you are helping a client with provided bank knowledge. 
+  
+    If a client query is a question related to banks explain it in detail.
+    If a client query is about general things answer it with human-like response, no long-winded way! and no more than 3 sentences! 
+    
+    This is the client Query: {issue} 
+    If the query is related to the Bank, you need to know the following information to solve the client's query, this is the INFORMATION KNOWLEDGE: {knowledge} 
+    ADDITIONAL INFORMATION that may complement: {adds_knowledge}
+
+    If the issue is not related to bank, just answer that you not capable of answering the client's issue. Dont give a misleading information to the client
+
+    ANSWER :
+    """
+)
+
+# prompt2 = PromptTemplate.from_template(
+#   """You are a professional and friendly CommonWealth Bank Customer Service answer with human-like response and good manner. 
+#     DON'T answer in a long-winded way! Mke it Simple NO more than 3 sentences
+
+#     This is the Question: {issue}
+#     ANSWER :
+#     """
+# )
+
+runnable = prompt | llm_base | StrOutputParser()
+# runnable = LLMChain(llm=llm_base, prompt=prompt)
+# runnable = prompt | ChatOpenAI(streaming=True, callbacks=[StreamingStdOutCallbackHandler()], openai_api_key=OPENAI_API_KEY) | StrOutputParser()
+def generate_initial_message():
+    initial_prompt = "Welcome to CommonWealth Bank! How can I assist you today?"
+    return initial_prompt
+
+def generate_response_message(response):
+    full_response = ""
+    response_words = response.split()
+    with st.chat_message("assistant"):
+        message_placeholder = st.empty()
+        for word in response_words:
+            full_response += word + " "
+            time.sleep(0.05)
+            message_placeholder.markdown(full_response + "▌")
+        message_placeholder.markdown(full_response)
+    return full_response
+
 st.title("Bank Customer Service Chat")
-
-# Initialize chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display chat messages from history on app rerun
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+
+initial_message = generate_response_message(generate_initial_message()) 
+st.session_state.messages.append({
+    "role": "assistant",
+    "content": initial_message
+})
 
 if user_input := st.chat_input("Enter your issue:"):
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.markdown(user_input)
 
-    knowledge_content = get_knowledge_content(vectara_client, user_input)
+    #1st preprocessing step
+    # negative_words = ["no", "No.", "no.", "NO!", "NO", "no!"] 
+    # Classification = runnable.invoke({"issue": user_input})
+    # classification = Classification.lower()
+    # print("Cjeck => " + Classification)
+    
+    #2nd preprocessing step
     print("__________________ Start of knowledge content __________________")
+    knowledge_content, summary = get_knowledge(user_input, vectara_client) #-> get documents from vectara Corpus
+    print(summary)
     print(knowledge_content)
-    response = runnable.invoke({"knowledge": knowledge_content, "issue": user_input})
-
-    response_words = response.split()
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        full_response = ""
-        for word in response_words:
-            full_response += word + " "
-            time.sleep(0.05)
-            message_placeholder.markdown(full_response + "▌")
-        message_placeholder.markdown(full_response)
-
+    response = runnable.invoke({"issue": user_input})
+    # response = runnable.invoke({"issue": user_input, "knowledge": summary, "adds_knowledge" : knowledge_content})
+    # if Classification.startswith("no"):
+    #     print("Other Information")
+    #     runnable1 = prompt2 | llm_base | StrOutputParser()
+    #     response = runnable1.invoke({"issue": user_input})
+    # else:
+    #     print("Bank Related Information")
+    
+    full_response = generate_response_message(response)
     st.session_state.messages.append({"role": "assistant", "content": full_response})
 
 # # Run when the submit button is pressed
