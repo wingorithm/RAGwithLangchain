@@ -15,7 +15,7 @@ repo_id = "mistralai/Mistral-7B-Instruct-v0.2"
 
 # Set up a Hugging Face Endpoint for Gemma 2b model
 llm = HuggingFaceEndpoint(
-    repo_id=repo_id, max_length=250, temperature=0.5, max_new_tokens=250, huggingfacehub_api_token="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"
+    repo_id=repo_id, max_length=250, temperature=0.5, max_new_tokens=250, huggingfacehub_api_token=""
 )
 
 schema = {
