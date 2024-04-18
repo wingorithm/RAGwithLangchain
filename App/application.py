@@ -65,12 +65,17 @@ def get_knowledge_content(vectara, query, threshold=0.5):
 vectara_client = initialize_vectara()
 
 prompt = PromptTemplate.from_template(
-  """You are a professional and friendly Bank Customer Service and you are helping a client with bank knowledge. If a client is asking about general question, answer it with human-like response. When a client asking an issue related to banks Just explain it in detail. This is the issue: {issue} 
-    If the issue is related to the Bank, you need to know the following information will help solve the client's issue, this is the information: {knowledge} 
+    """<s>[INST] You are a professional and friendly Bank Customer Service. Your task is to help a customer with a valid answer based on Commonwealth Bank knowledge. When a client ask related to banks, explain it briefly. 
+    
+    If a client doing small talk to you, answer it with human-like response so client will feel the human interaction.
+    
+    If the issue is not related to bank, just answer that you not capable of answering the client's issue. Dont give a misleading information to the client. 
 
-    If the issue is not related to bank, just answer that you not capable of answering the client's issue. Dont give a misleading information to the client
+    This is come knowledge that could help the client : {knowledge}. 
 
-    ANSWER :
+    [INST]
+    Question: {question}
+    [/INST]
     """
 )
 hf = initialize_hf()
@@ -100,10 +105,10 @@ if user_input := st.chat_input("Enter your issue:"):
     summarize = map_chain.invoke({"docs":knowledge_content})
     print("__________________ Start of knowledge content __________________")
     print(knowledge_content)
-    response = runnable.invoke({"knowledge": knowledge_content, "issue": user_input})
+    response = runnable.invoke({"knowledge": knowledge_content, "question": user_input})
 
     response_words = response['text']
-    answer_part = response_words.split("ANSWER :", 1)[1]
+    answer_part = response_words.split("[/INST]", 1)[1]
 
     # Optional: Remove any leading or trailing whitespace
     answer_part = answer_part.strip()
