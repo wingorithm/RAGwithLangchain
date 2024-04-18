@@ -10,22 +10,36 @@ load_dotenv(dotenv_path)
 import streamlit as st
 from dotenv import load_dotenv
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+from langchain.chains import LLMChain
+from langchain_community.llms import HuggingFaceHub
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain.schema import StrOutputParser
 from langchain.vectorstores import Vectara
-from openai import OpenAI
+from langchain import hub
+from langchain_community.chat_models import ChatOpenAI
+# from openai import OpenAI
 
 VECTARA_CUSTOMER_ID = os.getenv("VECTARA_CUSTOMER_ID")
 VECTARA_CORPUS_ID = os.getenv("VECTARA_CORPUS_ID")
 VECTARA_API_KEY = os.getenv("VECTARA_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+HF_TOKEN = os.getenv("HF_TOKEN_CALVIN")
+REPO_ID = os.getenv("REPO_ID")
 
-# def langchain_func(file):
-#     loader = TextLoader(file, encoding='UTF-8')
-#     documents = loader.load()
-#     global vectara
-#     vectara = Vectara.from_documents(documents, embedding=None)
+def initialize_hf():
+    hf = HuggingFaceHub(
+    huggingfacehub_api_token = HF_TOKEN,
+    repo_id=REPO_ID,
+    task="text-generation",
+    model_kwargs={
+        "max_new_tokens": 500,
+        "top_k": 30,
+        "max_length": 400,
+        "temperature": 0.1,
+        "repetition_penalty": 1.03,
+    })
+    return hf
 
 def initialize_vectara():
     vectara = Vectara(
@@ -40,11 +54,8 @@ def get_knowledge_content(vectara, query, threshold=0.5):
         query,
         score_threshold=threshold,
     )
-    knowledge_content = ""
-    for number, (score, doc) in enumerate(found_docs):
-        knowledge_content += f"Document {number}: {found_docs[number][0].page_content}\n"
-    return knowledge_content
-
+    return found_docs
+    
 # # Sidebar for txt upload and API keys
 # with st.sidebar:
 #     st.header("Configuration")
@@ -54,12 +65,17 @@ def get_knowledge_content(vectara, query, threshold=0.5):
 vectara_client = initialize_vectara()
 
 prompt = PromptTemplate.from_template(
-    """You are a professional and friendly Bank Customer Service and you are helping a client with bank knowledge. Just explain him in detail the answer and nothing else. This is the issue: {issue} 
-    To assist him with his issue, you need to know the following information: {knowledge} 
+  """You are a professional and friendly Bank Customer Service and you are helping a client with bank knowledge. If a client is asking about general question, answer it with human-like response. When a client asking an issue related to banks Just explain it in detail. This is the issue: {issue} 
+    If the issue is related to the Bank, you need to know the following information will help solve the client's issue, this is the information: {knowledge} 
+
+    If the issue is not related to bank, just answer that you not capable of answering the client's issue. Dont give a misleading information to the client
+
+    ANSWER :
     """
 )
+hf = initialize_hf()
 
-runnable = prompt | ChatOpenAI(streaming=True, callbacks=[StreamingStdOutCallbackHandler()], openai_api_key=OPENAI_API_KEY) | StrOutputParser()
+runnable = LLMChain(prompt=prompt, llm=hf)
 
 # Main Streamlit App
 st.title("Bank Customer Service Chat")
@@ -79,17 +95,26 @@ if user_input := st.chat_input("Enter your issue:"):
         st.markdown(user_input)
 
     knowledge_content = get_knowledge_content(vectara_client, user_input)
+    map_prompt = hub.pull("rlm/map-prompt")
+    map_chain = LLMChain(llm=hf, prompt=map_prompt)
+    summarize = map_chain.invoke({"docs":knowledge_content})
     print("__________________ Start of knowledge content __________________")
     print(knowledge_content)
     response = runnable.invoke({"knowledge": knowledge_content, "issue": user_input})
 
-    response_words = response.split()
+    response_words = response['text']
+    answer_part = response_words.split("ANSWER :", 1)[1]
+
+    # Optional: Remove any leading or trailing whitespace
+    answer_part = answer_part.strip()
+    answer = answer_part.split()
+
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         full_response = ""
-        for word in response_words:
+        for word in answer:
             full_response += word + " "
-            time.sleep(0.05)
+            time.sleep(0.01)
             message_placeholder.markdown(full_response + "▌")
         message_placeholder.markdown(full_response)
 
