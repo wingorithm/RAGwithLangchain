@@ -78,7 +78,6 @@ if "messages" not in st.session_state:
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
-print(st.session_state.messages)
 
 
 if user_input := st.chat_input("Enter your issue:"):
@@ -89,18 +88,7 @@ if user_input := st.chat_input("Enter your issue:"):
     print(st.session_state.messages)
     print("__________________ Start of knowledge content __________________")
     knowledge_content, summary = get_knowledge(user_input, vectara_client) #-> get documents from vectara Corpus
-    print(summary)
-    # print(knowledge_content)
     response = runnable.invoke({"issue": user_input, "knowledge": summary, "adds_knowledge" : knowledge_content})
 
-    response_words = response.split()
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        full_response = ""
-        for word in response_words:
-            full_response += word + " "
-            time.sleep(0.05)
-            message_placeholder.markdown(full_response + "▌")
-        message_placeholder.markdown(full_response)
-
+    full_response = generate_response_message(response["text"])
     st.session_state.messages.append({"role": "assistant", "content": full_response})
