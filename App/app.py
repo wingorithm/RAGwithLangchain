@@ -17,7 +17,6 @@ from langchain_community.llms import HuggingFaceEndpoint
 HF_TOKEN = os.getenv("HF_TOKEN")
 REPO_ID = "mistralai/Mistral-7B-Instruct-v0.2"
 
-
 llm_base = HuggingFaceEndpoint(
     repo_id=REPO_ID,
     max_new_tokens=512,
@@ -46,6 +45,7 @@ prompt = PromptTemplate.from_template(
     ANSWER :
     """
 )
+
 
 runnable = LLMChain(llm=llm_base, prompt=prompt)
 global_flag = False
@@ -93,6 +93,14 @@ if user_input := st.chat_input("Enter your issue:"):
     # print(knowledge_content)
     response = runnable.invoke({"issue": user_input, "knowledge": summary, "adds_knowledge" : knowledge_content})
 
-    full_response = generate_response_message(str(response['text']))
-    print(full_response)
+    response_words = response.split()
+    with st.chat_message("assistant"):
+        message_placeholder = st.empty()
+        full_response = ""
+        for word in response_words:
+            full_response += word + " "
+            time.sleep(0.05)
+            message_placeholder.markdown(full_response + "▌")
+        message_placeholder.markdown(full_response)
+
     st.session_state.messages.append({"role": "assistant", "content": full_response})
