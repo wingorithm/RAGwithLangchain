@@ -55,14 +55,16 @@ def get_knowledge_content(vectara, query, threshold=0.5):
         score_threshold=threshold,
     )
     return found_docs
-    
-# # Sidebar for txt upload and API keys
-# with st.sidebar:
-#     st.header("Configuration")
-#     uploaded_file = st.file_uploader("Choose a TXT file", type=["txt"])
-#     submit_button = st.button("Submit")
 
 vectara_client = initialize_vectara()
+history_chat = []
+
+def get_history():
+    history = ""
+    for hist in history_chat:
+        history = history + "\n" + hist
+
+    return history
 
 prompt = PromptTemplate.from_template(
     """<s>[INST] You are a professional and friendly Bank Customer Service. Your task is to help a customer with a valid answer based on Commonwealth Bank knowledge. When a client ask related to banks, explain it briefly. 
@@ -71,7 +73,10 @@ prompt = PromptTemplate.from_template(
     
     If the issue is not related to bank, just answer that you not capable of answering the client's issue. Dont give a misleading information to the client. 
 
-    This is come knowledge that could help the client : {knowledge}. 
+    This is some knowledge that could help the client : {knowledge}. 
+
+    The question is as follows: Hello[/INST]
+    Welcome to CommonWealth Bank! How can I assist you today?</s>
 
     [INST]
     Question: {question}
@@ -80,7 +85,7 @@ prompt = PromptTemplate.from_template(
 )
 hf = initialize_hf()
 
-runnable = LLMChain(prompt=prompt, llm=hf)
+runnable = prompt=prompt | hf | StrOutputParser()
 
 # Main Streamlit App
 st.title("Bank Customer Service Chat")
@@ -88,6 +93,7 @@ st.title("Bank Customer Service Chat")
 # Initialize chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
+    
 
 # Display chat messages from history on app rerun
 for message in st.session_state.messages:
@@ -101,19 +107,15 @@ if user_input := st.chat_input("Enter your issue:"):
 
     knowledge_content = get_knowledge_content(vectara_client, user_input)
     map_prompt = hub.pull("rlm/map-prompt")
-    map_chain = LLMChain(llm=hf, prompt=map_prompt)
+    map_chain =  map_prompt | hf | StrOutputParser()
     summarize = map_chain.invoke({"docs":knowledge_content})
     print("__________________ Start of knowledge content __________________")
     print(knowledge_content)
-    response = runnable.invoke({"knowledge": knowledge_content, "question": user_input})
 
-    response_words = response['text']
-    answer_part = response_words.split("[/INST]", 1)[1]
-
-    # Optional: Remove any leading or trailing whitespace
-    answer_part = answer_part.strip()
-    answer = answer_part.split()
-
+    response = runnable.invoke({"knowledge": knowledge_content, "history": get_history,"question": user_input})
+   
+    answer = response.split()
+    
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         full_response = ""
@@ -124,35 +126,3 @@ if user_input := st.chat_input("Enter your issue:"):
         message_placeholder.markdown(full_response)
 
     st.session_state.messages.append({"role": "assistant", "content": full_response})
-
-# # Run when the submit button is pressed
-# if submit_button and uploaded_file:
-#     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmpfile:
-#         tmpfile.write(uploaded_file.getvalue())
-#         tmp_filename = tmpfile.name
-
-#     try:
-#         vectara_client.add_files([tmp_filename])
-#         st.sidebar.success("txt file successfully uploaded to Vectara!")
-#     except Exception as e:
-#         st.sidebar.error(f"An error occurred: {str(e)}")
-#     finally:
-#         os.remove(tmp_filename)
-
-# def main(): 
-#     start_dependencies()    
-#     openai_api_key = os.getenv("OPENAI_API_KEY")
-#     llm = OpenAI(api_key=openai_api_key)
-#     retriever = vectara.as_retriever()
-    
-#     bot = ConversationalRetrievalChain.from_llm(
-#         llm, retriever, memory=memory, verbose=False
-#     )
-
-#     query = "is there a minimum deposit?"
-#     result = bot.invoke({"question": query})
-
-#     print(result["answer"])
-  
-# if __name__=="__main__": 
-#     main() 
